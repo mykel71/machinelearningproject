@@ -14,7 +14,7 @@ from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 from src.exception import CustomException
 from src.logger import logging
-from src.utils import save_object
+from src.utils import save_object, evaluate_models
 
 @dataclass
 class ModelTrainerConfig:
@@ -24,26 +24,47 @@ class ModelTrainer:
     def __init__(self):
         self.model_trainer_config = ModelTrainerConfig()
         
-    def initiate_model_trainer(self, train_array, test_array, preprocessor_path):
+    def initiate_model_trainer(self, train_array, test_array):
         try:
             logging.info("Splitting, Training and Test input data...")
             x_train, y_train, x_test, y_test = (
-                train_array[:,:-1],
-                train_array[:-1],
-                test_array[:,:-1],
-                test_array[:,-1]
+                train_array[:, :-1],  # Feature columns for training data
+                train_array[:, -1],   # Target column for training data
+                test_array[:, :-1],   # Feature columns for test data
+                test_array[:, -1]     # Target column for test data
             )
             models = {
                 "Random Forest": RandomForestRegressor(),
                 "Decision Tree": DecisionTreeRegressor(),
                 "Gradient Boosting": GradientBoostingRegressor(),
                 "Linear Regression": LinearRegression(),
-                "K-Neighbors Classifier": KNeighborsRegressor(),
-                "XGBClassifier": XGBRegressor(),
-                "CatBoosting Classifier": CatBoostRegressor(verbose=False),
-                "AdaBoost Classifier": AdaBoostRegressor(),
+                "K-Neighbors Regressor": KNeighborsRegressor(),
+                "XGBRegressor": XGBRegressor(),
+                "CatBoosting Regressor": CatBoostRegressor(verbose=False),
+                "AdaBoost Regressor": AdaBoostRegressor(),
             }
             
-            model_report:dict = evaluate_model( x_train = x_train, y_train = y_train, x_test = x_test, y_test = y_test, models = models)
-        except:
-            pass
+            model_report: dict = evaluate_models(x_train=x_train, y_train=y_train, x_test=x_test, y_test=y_test, models=models)
+            
+            # Get the best model and its score
+            best_model_score = max(model_report.values())
+            best_model_name = max(model_report, key=model_report.get)
+            best_model = models[best_model_name]
+            
+            if best_model_score < 0.6:
+                raise CustomException("No best model found")
+            
+            logging.info(f"Best found model on both training and testing dataset")
+            
+            save_object(
+                file_path=self.model_trainer_config.trained_model_file_path,
+                obj=best_model
+            )
+            
+            predicted = best_model.predict(x_test)
+            r2 = r2_score(y_test, predicted)
+            return r2
+            
+            
+        except Exception as e:
+            raise CustomException(e, sys)
